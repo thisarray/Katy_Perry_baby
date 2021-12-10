@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+
+<html lang="en-US">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>firework</title>
+  <script src="../jsgame0.js"></script>
+  <style type="text/css" media="screen">
+body {
+  background-color: white;
+  color: black;
+}
+.hidden {
+  display: none;
+}
+#original {
+  margin-left: 1em;
+}
+  </style>
+</head>
+
+<body>
+
+<main>
+<h1>firework</h1>
+
+<canvas id="screen">
+The game screen appears here if your browser supports the Canvas API.
+</canvas>
+<section id="controls">
+  <button type="button" id="reset">Reset</button>
+  <button type="button" id="pause">Pause</button>
+</section>
+
+<p>A mash up of missiles and particles.</p>
+
+</main>
+
+<script>
+WIDTH = 800;
+HEIGHT = 600;  // set the window dimensions
+
+const TRAIL_LENGTH = 500;
+const WIND_SCALE = 8;
+
+const TRAIL_BRIGHTNESS = 100;
+const FLARE_COLOR = [255, 220, 160];
+
+const DRAG = 0.7;  // fraction of speed lost per second
+const MAX_AGE = 3;  // lifetime of a particle
+
+/*
+ * Control the radius distribution
+ * <0.5 = weighted towards the outside
+ * 0.5 = uniform coverage of the circle
+ * >0.5 = weighted towards the inside
+ */
+const RADIUS_EXP = 0.5;
+const TAU = Math.PI * 2;  // math.tau is available in python 3.6+
+
+/*
+ * Return a random number N such that min <= N < max.
+ */
+function getRandom(min, max) {
+  return (Math.random() * (max - min)) + min;
+}
+
+/*
+ * Return a random integer N such that min <= N < max.
+ */
+function getRandomInteger(min, max) {
+  min = Math.ceil(min);
+  max = Math.floor(max);
+  return Math.floor((Math.random() * (max - min)) + min);
+}
+
+class Perlin {
+  constructor(amount = 1.0) {
+    this.seed = getRandomInteger(0, 1000000);
+    this.amount = amount;
+  }
+
+  _rnd(i) {
+    let n = 982451653,
+        d = 67867967;
+    return (this.seed + i) * n % d / d - 0.5;
+  }
+
+  _get(p) {
+    let n = Math.floor(p / WIND_SCALE),
+        frac = (p - n * WIND_SCALE) / WIND_SCALE,
+        l = this._rnd(n),
+        r = this._rnd(n + 1);
+    return r * frac + (1.0 - frac) * l;
+  }
+
+  get(p) {
+    let [x=0, y=0] = p;
+    return (this._get(x) - this._get(y + 1000000)) * this.amount;
+  }
+}
+
+const WIND_X = new Perlin(2.5);
+const WIND_Y = new Perlin(1.5);
+
+// A global list to hold all our missiles and particles
+var missiles, particles;
+
+class Missile {
+  constructor(x, vx, altitude, y = HEIGHT, vy = -150) {
+    this.x = x;
+    this.y = y;
+    this.vx = vx;
+    this.vy = vy;
+    this.altitude = altitude;
+    this.trail = [];
+    this.t = getRandom(0, 3);
+  }
+
+  step(dt) {
+    this.x += this.vx * dt;
+    this.y += this.vy * dt;
+    this.t += dt;
+
+    this.trail.unshift([this.x, this.y]);
+    while (this.trail.length > TRAIL_LENGTH) {
+      this.trail.pop();
+    }
+
+    let i = 0;
+    for (let [x, y] of this.trail.slice()) {
+      let nx = x + WIND_X.get([x, y]) * dt,
+          ny = y + WIND_Y.get([x, y]) * dt;
+      this.trail[i] = [nx, ny];
+      i++;
+    }
+
+    if (this.y <= this.altitude) {
+      // If the missile has reached the explode altitude
+      // Note y decreases going up
+      missiles.delete(this);
+      explode(this.x, this.y);
+    }
+  }
+
+  draw() {
+    for (let i = 0; i < this.trail.length; i++) {
+      if ((i + 1) === this.trail.length) {
+        break;
+      }
+      let start = this.trail[i],
+          end = this.trail[i+1],
+          c = TRAIL_BRIGHTNESS * (1.0 - i / TRAIL_LENGTH),
+          color = [c, c, c];
+      screen.draw.line(start, end, color);
+    }
+    screen.draw.filled_circle([this.x, this.y], 2, FLARE_COLOR);
+
+    // This small flickering lens flare makes it look like the
+    // missile's exhaust is very bright.
+    let flare_length = 4 + (Math.sin(this.t) * 2) + Math.sin(this.t * 5);
+    screen.draw.line([this.x - flare_length, this.y], [this.x + flare_length, this.y], FLARE_COLOR);
+  }
+}
+
+/*
+ * Create a particle explosion at (x, y).
+ *
+ * `num` is the number of particles to spawn.
+ * `speed` is the maximum speed of a particle in pixels per second.
+ */
+function explode(x, y, speed = 300, num = 200) {
+  const age = 0;
+  // Pick a random colour
+  const color = [getRandomInteger(128, 256), getRandomInteger(128, 256), getRandomInteger(128, 256)];
+  for (let i = 0; i < num; i++) {  // spawn 300 particles
+        // Choose a random angle anywhere in the circle
+    let angle = getRandom(0, TAU),
+        // Choose a random radius using a controllable distribution
+        radius = Math.pow(Math.random(), RADIUS_EXP),
+
+        // Convert angle/radius to a cartesian vector
+        vx = speed * radius * Math.sin(angle),
+        vy = speed * radius * Math.cos(angle);
+     particles.push([x, y, vx, vy, age, color]);  // add it
+  }
+}
+
+/*
+ * Draw all the particles as 1x1 Rect instead of manipulating pixels.
+ */
+function draw() {
+  screen.clear();
+  for (let m of missiles) {
+    m.draw();
+  }
+  for (let [x, y, vx, vy, age, color] of particles) {  // we only care about position and color
+    screen.draw.filled_rect(new Rect(Math.round(x), Math.round(y), 1, 1), color);
+  }
+}
+
+/*
+ * Update all particles. dt is the time step in seconds.
+ */
+function update(dt) {
+  for (let m of missiles) {
+    m.step(dt);
+  }
+
+  let newParticles = [],
+      drag = Math.pow(DRAG, dt);  // amount of drag that is applied
+  for (let [x, y, vx, vy, age, color] of particles) {
+    age += dt;  // update the age of the particle
+    if (age > MAX_AGE) {
+      continue;  // particle is expired, don't keep it
+    }
+
+    vx *= drag;  // apply drag to the velocity vector
+    vy *= drag;
+    x += vx * dt;  // move the particle according to its velocity
+    y += vy * dt;
+
+    if (age > 2) {  // If the particle is getting old, fade it
+      color = color.map(c => Math.round(c - (100 * dt)));
+    }
+
+    newParticles.push([x, y, vx, vy, age, color]);  // keep it
+  }
+  particles = newParticles;  // write back the particles we're keeping
+}
+
+function launch() {
+  let count = getRandomInteger(1, 4),
+      altitude = getRandomInteger(100, 400),
+      m;
+  for (let i = 0; i < count; i++) {
+    m = new Missile(getRandomInteger(200, WIDTH - 200), getRandomInteger(-10, 10), altitude);
+    missiles.add(m);
+  }
+}
+
+function reset() {
+  missiles = new Set();
+  particles = [];
+  clock.schedule_interval(launch, 1.0);
+}
+
+window.addEventListener('load', (event) => {
+  reset();
+  screen.set_mode('#screen', '#reset', '#pause');
+});
+</script>
+</body>
+
+</html>
