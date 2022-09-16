@@ -21,6 +21,10 @@ body {
 </head>
 
 <body>
+<section id="soundLoader" class="hidden">
+  <audio class="hidden" controls preload="auto" src="sounds/canon.wav" data-name="canon">Your browser does not support the audio element.</audio>
+  <audio class="hidden" controls preload="auto" src="sounds/whine.wav" data-name="whine">Your browser does not support the audio element.</audio>
+</section>
 
 <main>
 <h1>firework</h1>
@@ -34,6 +38,10 @@ The game screen appears here if your browser supports the Canvas API.
 </section>
 
 <p>A mash up of missiles and particles.</p>
+
+<h2>Attribution</h2>
+
+<p>Sounds licensed under <a href="https://creativecommons.org/licenses/by-nc-sa/3.0/legalcode">Creative Commons Attribution-NonCommercial-ShareAlike 3.0 Unported</a>.</p>
 
 </main>
 
@@ -171,6 +179,7 @@ class Missile {
  * `speed` is the maximum speed of a particle in pixels per second.
  */
 function explode(x, y, speed = 300, num = 200) {
+  sounds.canon.play();
   const age = 0;
   // Pick a random colour
   const color = [getRandomInteger(128, 256), getRandomInteger(128, 256), getRandomInteger(128, 256)];
@@ -231,6 +240,7 @@ function update(dt) {
 }
 
 function launch() {
+  sounds.whine.play();
   let count = getRandomInteger(1, 4),
       altitude = getRandomInteger(100, 400),
       m;
@@ -243,7 +253,7 @@ function launch() {
 function reset() {
   missiles = new Set();
   particles = [];
-  clock.schedule_interval(launch, 1.0);
+  clock.schedule_interval(launch, 4.0);
 }
 
 window.addEventListener('load', (event) => {
